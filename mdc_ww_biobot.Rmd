@@ -1,0 +1,204 @@
+---
+output:
+  pdf_document:
+    pandoc_args: --listings
+    fig_caption: yes
+    includes:
+      in_header: "aes/preamble.tex"
+  html_document:
+    highlight: kate
+    theme: cosmo
+    df_print: paged
+  word_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+# Set Global Options For Knitr To Enhance Document Readability
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+# Customize How Inline Numeric Results Are Displayed
+knitr::knit_hooks$set(inline = function(x) {   if(!is.numeric(x)){     x   }else{    prettyNum(round(x,2), big.mark=",")    } })
+```
+
+```{r libaries, include=FALSE}
+# Import the Libraries
+library(tidyverse)
+library(lubridate)
+library(kableExtra)
+library(janitor)
+library(zoo)
+library(RColorBrewer)
+
+# Load Color Palette
+source('aes/color_palettes.R')
+
+# Load Helper Functions
+source('doh_functions.R')
+
+end_date <- as_date(Sys.Date())
+options(scipen=999)
+```
+
+\begin{minipage}{.5\textwidth}\centering
+\begin{center}
+\includegraphics[width=\textwidth]{aes/DOHMiamIDade Logo (new).png}
+\end{center}
+\end{minipage} \hfill
+\begin{minipage}{.5\textwidth}\centering
+    DOH-Miami-Dade
+
+    COVID-19 Wastewater Report
+    
+    by Roy Williams MPH
+
+    As of `r end_date`
+\end{minipage}
+
+
+\textcolor[HTML]{`r substring(primary[2], 2)`}{\hrulefill}
+
+```{r}
+# Load Biobot Data
+ww_data <- read_csv("data/wastewater_by_county_0508.csv") %>%
+  filter(name == "Miami-Dade County, FL") %>%
+  mutate(
+    effective_concentration_rolling_average = round(effective_concentration_rolling_average, 2)
+  ) %>%
+  rename(date = "sampling_week") %>%
+  arrange(date) %>%
+  mutate(change = effective_concentration_rolling_average - lag(
+    effective_concentration_rolling_average,
+    default = first(effective_concentration_rolling_average)
+  )) %>%
+  mutate(change = round(change))
+```
+
+# Time Series of Wastewater 
+Below depicts the time series of normalized wastewater concentration for Miami-Dade County from March 25th, 2020 until May 3rd, 2023. Three-day rolling averages are used to minimize noise.
+
+*Table 1* contains the mean, average, number of measurements, standard deviation, and standard error for the normalized wastewater concentration. This helps establish a baseline measurment.
+
+*Table 2* contains historical wastewater data from the onset of the epidemic until May 3rd, 2023.
+
+*Plot 1* is a historical normalized time series.
+
+# National Wastewater Monitoring System Methodology
+The wastewater data shows SARS-CoV-2 effective virus concentrations measured by Biobot in samples from wastewater treatment facilities across the United States. To preserve the anonymity of our participating utilities and to improve their representativeness, we present aggregated data:
+
+For each sampling location, if there is more than one sample in a week, we aggregate the samples within each week using an unweighted average.
+
+For each geographic unit (county, region, or nation) and week, we aggregate across sampling locations within the geographic unit using a weighted average. The weight for a sampling location is the relevant sewershed population, or 300,000, whichever is smaller. When a sampling location serves multiple counties, the location is associated with the single county that the wastewater operator has provided as being the plant's primary service area.
+
+For each geographic unit, we smooth the weekly values using a 3-value rolling average that gives higher weight to that week's measurement. If the geographic unit does not have a sample every week, then this 3-value window can include samples outside of a 3-week window.
+
+We use the weighted average scheme for aggregating values across sampling locations as a compromise to achieve multiple goals:
+
+Population-weighted averaging means that each person contributes approximately equally to the resulting value.
+
+Because smaller catchments have more intrinsic variability, population-weighted averaging improves the statistical properties of the average.
+
+Capping the weights increases the relative contribution of small and medium catchments, which aids both geographic representativeness and statistical properties of the average.
+
+We include data from all Biobot's sampling locations in the nationwide and regional aggregate results. We highlight a subset of counties in our dataset, representing either counties sampling for longer continuous periods or those participating in The Biobot Network.
+
+Source- **Nationwide Wastewater Monitoring Network**: https://github.com/biobotanalytics/covid19-wastewater-data
+
+```{r}
+# Summarize Data
+ww_ds <- ww_data %>%
+	summarize(
+		average_conc = round(mean(
+			effective_concentration_rolling_average
+		)),
+		median_conc = round(median(
+			effective_concentration_rolling_average
+		)),
+		samples = n(),
+		sd = round(sd(
+			effective_concentration_rolling_average
+		)),
+		se = round(sd / sqrt(samples))
+	) %>%
+	title() %>%
+	tab(caption = "Descriptive Statistics Measured in Genomic Copies per mL")
+ww_ds
+
+# Wastewater Table
+ww_table <- ww_data %>%
+	select(date, effective_concentration_rolling_average, change) %>%
+	arrange(date) %>%
+	mutate(
+		effective_concentration_rolling_average = round(effective_concentration_rolling_average)
+	) %>%
+	title() %>%
+	tab(caption = "Weighted 3-Day Rolling Wastewater Concentration by Report Date")
+ww_table
+
+
+# Wastewater Plot
+ww_plot <- ggplot(data = ww_data) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  aes(x = date, y =  effective_concentration_rolling_average) +
+  scale_x_date(date_breaks = "1 month",
+               labels = scales::date_format("%m-%y")) +
+  labs(
+    title = "Timeseries of 3-Day Rolling Average Wastewater Concentration \n in Miami-Dade County",
+    caption = "Solid line: GAM Predictor",
+    y = "SARS CoV-2 Genomic Copies per m/L ",
+    x = "Date"
+  ) +
+  geom_point() +
+  stat_smooth(method = "gam", colour = "turquoise")
+ww_plot
+
+```
+
+\newpage
+
+```{r}
+
+#Inline text
+ww_ds_2 <- ww_data %>% 
+     summarize(average_conc = round(mean(effective_concentration_rolling_average)),
+              median_conc = round(median(effective_concentration_rolling_average)),
+              samples=n(),
+              sd=round(sd(effective_concentration_rolling_average)),
+              se=round(sd/sqrt(samples))
+    )
+
+# Recent Concentration
+most_recent_conc <- ww_data %>%
+	select(effective_concentration_rolling_average) %>%
+	slice_tail(n = 1) %>%
+	pluck(1)
+
+# Recent date
+most_recent_date <- ww_data %>%
+	select(date) %>%
+	slice_tail(n = 1) %>%
+	pluck(1)
+
+# Recent Change
+most_recent_change <- ww_data %>%
+	select(change) %>%
+	slice_tail(n = 1) %>%
+	pluck(1)
+
+
+# Change Adjective
+adjective <- ww_data %>%
+	mutate(adjective = case_when(change > 0.0 ~ "an increase",
+															 change < 0.0 ~ "a decrease")) %>%
+	slice_tail(n = 1) %>%
+	pluck(8)
+```
+
+# Summary of Wastewater
+The baseline number of genomic copies from March 2020 to May 3rd, 2023. defined as the median number of genomic copies throughout this period was **`r ww_ds_2$median_conc`.** 
+
+The most recent 3-day rolling average normalized concentration was **`r most_recent_conc`** obtained on **`r most_recent_date`.** This was **`r adjective`** of **`r most_recent_change`** genomic copies per m/L from the previous measurement. 
+
+# Data Source
+- **Nationwide Wastewater Monitoring Network**: https://github.com/biobotanalytics/covid19-wastewater-data
